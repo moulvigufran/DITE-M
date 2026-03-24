@@ -281,7 +281,21 @@
         // Function to handle exponential backoff for API retries
         async function fetchWithRetry(apiUrl, payload, retries = 3) {
             const apiKey = ""; // Canvas provides this dynamically
-            const url = `${apiUrl}?key=${apiKey}`;
+            const url = `${curl "https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent" \
+  -H 'Content-Type: application/json' \
+  -H 'X-goog-api-key: AIzaSyCrygcRZNw0TovcgzVXHTBw3uQUupqx9IU' \
+  -X POST \
+  -d '{
+    "contents": [
+      {
+        "parts": [
+          {
+            "text": "Explain how AI works in a few words"
+          }
+        ]
+      }
+    ]
+  }'}?key=${AIzaSyCrygcRZNw0TovcgzVXHTBw3uQUupqx9IU}`;
             const body = JSON.stringify(payload);
             const headers = { 'Content-Type': 'application/json' };
 
