@@ -1,0 +1,965 @@
+<body>
+
+
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Personal Health &amp; Macro Planner</title>
+
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Custom Font */
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap');
+        body {
+            font-family: 'Inter', sans-serif;
+            transition: background-color 0.4s ease;
+        }
+
+        /* Define Theme Colors */
+        :root {
+            --color-primary: #375d81; /* Deep Indigo/Teal */
+            --color-secondary: #06b6d4; /* Cyan/Teal Accent */
+        }
+
+        /* --- Base Theme Styling (Defaults to Light) --- */
+        body {
+            background-color: #eef2ff; /* Very light lavender */
+        }
+        .main-card {
+            background-color: white;
+            box-shadow: 0 20px 40px -5px rgba(10, 20, 40, 0.2);
+            border: 1px solid #e0e7ff;
+        }
+        .input-group input, .input-group select {
+            background-color: #f9fafb;
+            border-color: #d1d5db;
+            transition: all 0.2s ease;
+        }
+        .result-box {
+            background: linear-gradient(145deg, #f0f9ff, #e0f2fe);
+            border: 1px solid #bae6fd;
+        }
+
+        /* --- Dark Mode Styles --- */
+        html.dark body {
+            background-color: #0f172a; /* Dark Navy */
+        }
+        html.dark .main-card {
+            background-color: #1e293b; /* Darker card background */
+            box-shadow: 0 20px 40px -5px rgba(0, 0, 0, 0.5);
+            border: 1px solid #334155;
+        }
+        html.dark .input-group, html.dark label, html.dark h1, html.dark h2, html.dark h3, html.dark p, html.dark summary {
+            color: #e2e8f0;
+        }
+        html.dark .input-group input, html.dark .input-group select {
+            background-color: #334155;
+            border-color: #475569;
+            color: #e2e8f0;
+        }
+        html.dark .result-box {
+            background: linear-gradient(145deg, #1e293b, #334155);
+            border: 1px solid #475569;
+        }
+
+        /* Custom Toggle Styling */
+        input:checked + div {
+            background-color: var(--color-primary);
+        }
+
+        /* AI Diet Loading Spinner */
+        .spinner {
+            border-top-color: var(--color-secondary);
+            -webkit-animation: spin 1s ease-in-out infinite;
+            animation: spin 1s ease-in-out infinite;
+        }
+        @-webkit-keyframes spin {
+            0% { -webkit-transform: rotate(0deg); }
+            100% { -webkit-transform: rotate(360deg); }
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        /* --- Print Styles (Hiding website URL) --- */
+        @media print {
+             /* Hides browser header/footer content like the URL */
+            @page {
+                margin: 0; 
+                size: A4 portrait;
+            }
+            
+            body {
+                background-color: white !important;
+                -webkit-print-color-adjust: exact;
+                color-adjust: exact;
+            }
+            #mainApp { display: none; }
+            #printArea {
+                display: block !important;
+                width: 100%;
+                min-height: 100vh;
+                padding: 0;
+                margin: 0;
+            }
+            .p-report-section { break-inside: avoid; }
+            .p-report-header h1 { color: var(--color-primary) !important; }
+            #customMessageBox { display: none !important; }
+        }
+    </style>
+
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        'primary-color': '#375d81',
+                        'secondary-color': '#06b6d4',
+                        'success-color': '#10b981',
+                        'warning-color': '#f59e0b',
+                        'danger-color': '#ef4444',
+                    },
+                }
+            }
+        }
+    </script>
+
+
+
+
+    <!-- Global State -->
+    <script>
+        // Placeholder for the Google Apps Script Web App URL
+        const GOOGLE_SHEET_WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbwO6ROnCmMMuUyBKhIusPY0KVNVgqAmxoD_wLuW0fVBPj8FGzRKhyS_RCeaAIRinW8/exec'; 
+        
+        // Global variables and state are now accessible via window.
+        window.currentProfile = {
+            weight: 70, // kg
+            height: 175, // cm
+            age: 30,
+            gender: 'Male',
+            activityLevel: 1.55, // Moderate multiplier
+            dietType: 'Non-Vegetarian', 
+            stateLocation: 'Other', 
+            aiDietPlan: '', // Stores the generated diet text
+            units: 'metric', // 'metric' or 'imperial'
+            bmi: 22.86
+        };
+        window.currentTheme = 'light';
+        window.customMessageTimeout = null;
+        
+        // Comprehensive RDA values (based on common standards for a healthy adult)
+        window.rda = {
+            protein: 50, // g
+            fat: 20, // g (Minimum)
+            fiber: 30, // g
+            calcium: 1000, // mg
+            iron: 18, // mg
+            vitaminC: 90, // mg
+            vitaminD: 15, // μg
+            vitaminB12: 2.4, // μg
+            sodium: 1500, // mg
+            potassium: 4700 // mg
+        };
+        
+        window.activityLevelMap = {
+            '1.2': 'Sedentary (Little to no exercise)',
+            '1.375': 'Lightly Active (Light exercise 1-3 days/week)',
+            '1.55': 'Moderately Active (Moderate exercise 3-5 days/week)',
+            '1.725': 'Very Active (Hard exercise 6-7 days/week)',
+            '1.9': 'Extra Active (Very hard exercise & physical job)'
+        };
+
+        const indianStates = [
+            "Andhra Pradesh", "Arunachal Pradesh", "Assam", "Bihar", "Chhattisgarh", 
+            "Goa", "Gujarat", "Haryana", "Himachal Pradesh", "Jharkhand", "Karnataka", 
+            "Kerala", "Madhya Pradesh", "Maharashtra", "Manipur", "Meghalaya", "Mizoram", 
+            "Nagaland", "Odisha", "Punjab", "Rajasthan", "Sikkim", "Tamil Nadu", 
+            "Telangana", "Tripura", "Uttar Pradesh", "Uttarakhand", "West Bengal", "Other"
+        ].sort(); // Sort for better UX
+
+        // --- Utility Functions ---
+        
+        function getActivityLevelText(multiplier) {
+             return window.activityLevelMap[String(multiplier)] || 'Moderately Active';
+        }
+
+        function calculateBMI(weight, height, units) {
+            // Note: weight and height are always in KG and CM internally
+            const heightMeters = height / 100;
+            const bmi = weight / (heightMeters * heightMeters);
+            return parseFloat(bmi.toFixed(2));
+        }
+
+        function getBMIClassification(bmi) {
+            if (bmi < 18.5) return { name: 'Underweight', color: 'text-warning-color' };
+            if (bmi >= 18.5 && bmi < 24.9) return { name: 'Normal weight', color: 'text-success-color' };
+            if (bmi >= 25 && bmi < 29.9) return { name: 'Overweight', color: 'text-orange-500' };
+            return { name: 'Obesity', color: 'text-danger-color' };
+        }
+
+        /**
+         * Calculates BMR and TDEE using the Mifflin-St Jeor Equation.
+         * Profile weight/height are expected in KG/CM.
+         */
+        function calculateMetrics(profile) {
+            const { weight, height, age, gender, activityLevel } = profile;
+            
+            // Mifflin-St Jeor Equation uses KG and CM
+            const weightKg = weight;
+            const heightCm = height;
+
+            let bmr;
+            if (gender === 'Male') {
+                // BMR = (10 * weight_kg) + (6.25 * height_cm) - (5 * age) + 5
+                bmr = (10 * weightKg) + (6.25 * heightCm) - (5 * age) + 5;
+            } else { // Female
+                // BMR = (10 * weight_kg) + (6.25 * height_cm) - (5 * age) - 161
+                bmr = (10 * weightKg) + (6.25 * heightCm) - (5 * age) - 161;
+            }
+            
+            const tdee = Math.round(bmr * activityLevel);
+
+            return { bmr: Math.round(bmr), tdee: tdee };
+        }
+
+        // --- GOOGLE SHEETS LOGGING LOGIC ---
+        async function logDataToSheets(patientName, hospitalName) {
+            if (GOOGLE_SHEET_WEB_APP_URL.includes('YOUR_DEPLOYED_GOOGLE_APPS_SCRIPT_URL_HERE')) {
+                console.warn("Sheet logging skipped: Please replace GOOGLE_SHEET_WEB_APP_URL with your deployed Apps Script URL.");
+                showCustomMessage("Data logging skipped: Apps Script URL not configured.", 'info');
+                return;
+            }
+
+            const profile = window.currentProfile;
+            const { weight, height, age, gender, activityLevel, units, bmi, dietType, stateLocation } = profile;
+            const { bmr, tdee } = calculateMetrics(profile);
+            const bmiResult = getBMIClassification(bmi);
+
+            // Prepare data for logging
+            const data = {
+                timestamp: new Date().toLocaleString(),
+                patientName: patientName,
+                hospitalName: hospitalName,
+                weight: units === 'metric' ? `${weight.toFixed(1)} kg` : `${(weight / 0.453592).toFixed(1)} lbs`,
+                height: units === 'metric' ? `${height.toFixed(1)} cm` : `${(height / 2.54).toFixed(1)} in`,
+                age: age,
+                gender: gender,
+                activityLevelText: getActivityLevelText(activityLevel),
+                dietType: dietType,
+                stateLocation: stateLocation,
+                bmi: bmi,
+                bmiClassification: bmiResult.name,
+                bmr: bmr,
+                tdee: tdee
+            };
+
+            try {
+                // Using 'no-cors' is necessary for fetching from an Apps Script Web App
+                const response = await fetch(GOOGLE_SHEET_WEB_APP_URL, {
+                    method: 'POST',
+                    mode: 'no-cors', 
+                    cache: 'no-cache',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(data)
+                });
+                
+                // Since we use 'no-cors', we cannot check the response status, 
+                // but if the fetch completes without a network error, it's usually successful.
+                showCustomMessage("Data successfully logged to Google Sheet!", 'success');
+            } catch (error) {
+                console.error('Error logging data to Google Sheets:', error);
+                showCustomMessage("Error logging data to Google Sheet. Check console for details.", 'error');
+            }
+        }
+
+
+        // --- Core Logic & API Interaction (AI Diet) ---
+
+        // Function to handle exponential backoff for API retries
+        async function fetchWithRetry(apiUrl, payload, retries = 3) {
+            const apiKey = ""; // Canvas provides this dynamically
+            const url = `${apiUrl}?key=${apiKey}`;
+            const body = JSON.stringify(payload);
+            const headers = { 'Content-Type': 'application/json' };
+
+            for (let i = 0; i < retries; i++) {
+                try {
+                    const response = await fetch(url, { method: 'POST', headers, body });
+                    if (!response.ok) {
+                         // Check for rate limit (429) or other retryable errors
+                        if (response.status === 429 && i < retries - 1) {
+                            const delay = Math.pow(2, i) * 1000; // 1s, 2s, 4s...
+                            await new Promise(resolve => setTimeout(resolve, delay));
+                            continue; // Retry
+                        }
+                        throw new Error(`API request failed with status: ${response.status}`);
+                    }
+                    return response.json();
+                } catch (error) {
+                    console.error('Fetch error:', error);
+                    if (i === retries - 1) throw error; // Re-throw final error
+                    
+                    const delay = Math.pow(2, i) * 1000;
+                    await new Promise(resolve => setTimeout(resolve, delay));
+                }
+            }
+        }
+
+
+        async function generateAIDiet() {
+            const aiDietBox = document.getElementById('aiDietRecommendation');
+            const stateLocation = window.currentProfile.stateLocation;
+            
+            if (stateLocation === 'Other') {
+                 aiDietBox.innerHTML = '<p class="text-warning-color dark:text-yellow-400">Please select a specific Indian state to generate a localized AI diet plan.</p>';
+                 window.currentProfile.aiDietPlan = '';
+                 return;
+            }
+
+            // Show loading state
+            aiDietBox.innerHTML = `
+                <div class="flex items-center justify-center p-4">
+                    <div class="spinner border-4 border-t-4 border-gray-200 h-8 w-8 rounded-full mr-3"></div>
+                    <span class="text-primary-color dark:text-secondary-color">Generating AI Diet for ${stateLocation}...</span>
+                </div>
+            `;
+            window.currentProfile.aiDietPlan = ''; // Clear previous plan
+
+            const systemPrompt = "You are an expert Indian nutritionist and diet planner. Your goal is to provide a concise, single-paragraph summary describing a healthy, regionally-appropriate diet plan for the specified Indian state. Focus on local staples, common dishes, and seasonal ingredients. DO NOT include recipes, caloric counts, or specific portion sizes. Just give the descriptive summary.";
+            
+            const userQuery = `Generate a sample balanced diet plan based on the cuisine and ingredients common in ${stateLocation} for an individual with a ${window.currentProfile.gender}, ${getActivityLevelText(window.currentProfile.activityLevel)} lifestyle.`;
+
+            const payload = {
+                contents: [{ parts: [{ text: userQuery }] }],
+                tools: [{ "google_search": {} }],
+                systemInstruction: {
+                    parts: [{ text: systemPrompt }]
+                },
+            };
+            
+            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent`;
+            
+            try {
+                const result = await fetchWithRetry(apiUrl, payload);
+                const text = result?.candidates?.[0]?.content?.parts?.[0]?.text;
+
+                if (text) {
+                    window.currentProfile.aiDietPlan = text; // Store the result
+                    aiDietBox.innerHTML = `<p class="text-gray-700 dark:text-gray-200">${text}</p>`;
+                    showCustomMessage(`AI Diet for ${stateLocation} generated!`, 'info');
+                } else {
+                    aiDietBox.innerHTML = '<p class="text-danger-color dark:text-red-400">Error: Could not generate diet plan. Please try again.</p>';
+                }
+            } catch (error) {
+                console.error('Gemini API Error:', error);
+                aiDietBox.innerHTML = '<p class="text-danger-color dark:text-red-400">Network or API error occurred. Cannot generate diet plan.</p>';
+            }
+        }
+
+
+        // --- UI & State Management ---
+
+        function updateProfile(key, value) {
+            // Handle numeric conversion for core metrics
+            if (key === 'weight') {
+                 const numValue = parseFloat(value);
+                 if (isNaN(numValue) || numValue <= 0) return;
+                 // Store weight in KG (convert from lbs if imperial mode is active)
+                 window.currentProfile.weight = window.currentProfile.units === 'imperial' ? numValue * 0.453592 : numValue;
+            } else if (key === 'height') {
+                 const numValue = parseFloat(value);
+                 if (isNaN(numValue) || numValue <= 0) return;
+                 // Store height in CM (convert from inches if imperial mode is active)
+                 window.currentProfile.height = window.currentProfile.units === 'imperial' ? numValue * 2.54 : numValue;
+            } else if (key === 'age' || key === 'activityLevel') {
+                const numValue = parseFloat(value);
+                if (isNaN(numValue) || numValue <= 0) return;
+                window.currentProfile[key] = numValue;
+            } else {
+                window.currentProfile[key] = value;
+            }
+
+            // AI Diet specific logic: trigger generation if AI Diet is selected and a specific state is chosen
+            if (key === 'dietType' || key === 'stateLocation') {
+                const isAIDiet = window.currentProfile.dietType === 'AI Diet (based on state of India)';
+                const isStateSelected = window.currentProfile.stateLocation !== 'Other';
+                
+                if (isAIDiet && isStateSelected) {
+                    generateAIDiet();
+                } else if (!isAIDiet) {
+                    // Clear the AI result if the user switches to a standard diet type
+                    window.currentProfile.aiDietPlan = '';
+                    document.getElementById('aiDietRecommendation').innerHTML = '<p class="text-gray-500 dark:text-gray-400">Select a state and "AI Diet" to generate a plan.</p>';
+                }
+            }
+            
+            // Re-calculate BMI on every relevant update
+            const { weight, height } = window.currentProfile; // These are always KG and CM
+            window.currentProfile.bmi = calculateBMI(weight, height, 'metric');
+            updateUI();
+        }
+
+        function toggleUnits(isImperial) {
+            const newUnits = isImperial ? 'imperial' : 'metric';
+            window.currentProfile.units = newUnits;
+
+            const weightInput = document.getElementById('weight');
+            const heightInput = document.getElementById('height');
+            const weightLabel = document.getElementById('weightLabel');
+            const heightLabel = document.getElementById('heightLabel');
+            const bmiUnitText = document.getElementById('bmiUnitText');
+
+            const weightKg = window.currentProfile.weight;
+            const heightCm = window.currentProfile.height;
+
+            if (newUnits === 'imperial') {
+                weightLabel.textContent = 'Weight (lbs)';
+                heightLabel.textContent = 'Height (in)';
+                bmiUnitText.textContent = '(lbs, in)';
+
+                // Update input field to show imperial value
+                weightInput.value = (weightKg * 2.20462).toFixed(1);
+                heightInput.value = (heightCm * 0.393701).toFixed(1);
+
+            } else { // Metric
+                weightLabel.textContent = 'Weight (kg)';
+                heightLabel.textContent = 'Height (cm)';
+                bmiUnitText.textContent = '(kg, cm)';
+
+                // Update input field to show metric value
+                weightInput.value = weightKg.toFixed(1);
+                heightInput.value = heightCm.toFixed(1);
+            }
+
+            // Ensure the toggle reflects the new state
+            const unitToggle = document.getElementById('unitToggle');
+            if (unitToggle) unitToggle.checked = isImperial;
+            
+            // Recalculate and update UI
+            window.currentProfile.bmi = calculateBMI(weightKg, heightCm, 'metric');
+            updateUI();
+        }
+
+        function toggleGenderSwitch(isFemale) {
+            const newGender = isFemale ? 'Female' : 'Male';
+            updateProfile('gender', newGender);
+            document.getElementById('genderLabel').textContent = newGender;
+        }
+
+        function updateUI() {
+            const { bmi, activityLevel, units, dietType, stateLocation } = window.currentProfile;
+            const aiDietBox = document.getElementById('aiDietRecommendation');
+
+            // Re-populate non-calculated inputs to match state
+            document.getElementById('activityLevel').value = activityLevel;
+            document.getElementById('dietType').value = dietType;
+            document.getElementById('stateLocation').value = stateLocation;
+
+            // Update Results
+            const { bmr, tdee } = calculateMetrics(window.currentProfile);
+            const bmiResult = getBMIClassification(bmi);
+
+            document.getElementById('bmiValue').textContent = bmi;
+            document.getElementById('bmiClassification').textContent = bmiResult.name;
+            document.getElementById('bmiClassification').className = `font-bold ${bmiResult.color}`;
+            
+            document.getElementById('bmrResult').textContent = bmr.toLocaleString();
+            document.getElementById('tdeeResult').textContent = tdee.toLocaleString();
+
+            // Handle AI Diet section visibility
+            const aiDietSection = document.getElementById('aiDietSection');
+            const stateSelectInput = document.getElementById('stateLocationInput');
+            
+            if (aiDietSection) {
+                 if (dietType === 'AI Diet (based on state of India)') {
+                     aiDietSection.classList.remove('hidden');
+                     stateSelectInput.classList.remove('opacity-50', 'pointer-events-none');
+                     
+                     // Trigger AI generation if the plan is empty and a state is selected
+                     if (!window.currentProfile.aiDietPlan && stateLocation !== 'Other') {
+                        generateAIDiet();
+                     } else if (stateLocation === 'Other') { // FIX: Explicitly show prompt if AI Diet is selected but state is 'Other'
+                         aiDietBox.innerHTML = '<p class="text-warning-color dark:text-yellow-400">Please select a specific Indian state to generate a localized AI diet plan.</p>';
+                         window.currentProfile.aiDietPlan = ''; // Clear plan if state is invalid
+                     }
+                 } else {
+                     aiDietSection.classList.add('hidden');
+                     stateSelectInput.classList.add('opacity-50', 'pointer-events-none');
+                 }
+            }
+        }
+
+        function applyTheme(theme) {
+            const html = document.documentElement;
+            if (theme === 'dark') {
+                html.classList.add('dark');
+                window.currentTheme = 'dark';
+            } else {
+                html.classList.remove('dark');
+                window.currentTheme = 'light';
+            }
+
+            const themeToggle = document.getElementById('themeToggle');
+            if (themeToggle) themeToggle.checked = theme === 'dark';
+        }
+
+        function showCustomMessage(message, type = 'info') {
+            const box = document.getElementById('customMessageBox');
+            if (!box) return;
+
+            if (window.customMessageTimeout) {
+                clearTimeout(window.customMessageTimeout);
+            }
+
+            let bgColor, borderColor, textColor;
+            if (type === 'error') {
+                bgColor = 'bg-red-100 dark:bg-red-900';
+                borderColor = 'border-danger-color dark:border-red-600';
+                textColor = 'text-red-800 dark:text-red-200';
+            } else if (type === 'info') {
+                bgColor = 'bg-cyan-100 dark:bg-cyan-900';
+                borderColor = 'border-secondary-color dark:border-cyan-600';
+                textColor = 'text-cyan-800 dark:text-cyan-200';
+            } else { // success
+                bgColor = 'bg-green-100 dark:bg-green-900';
+                borderColor = 'border-success-color dark:border-green-600';
+                textColor = 'text-green-800 dark:text-green-200';
+            }
+
+            box.className = `fixed bottom-4 right-4 p-4 rounded-xl border-l-4 shadow-xl ${bgColor} ${borderColor} z-50 transition-transform duration-300 transform translate-x-0`;
+            box.innerHTML = `<p class="font-semibold text-sm ${textColor}">${message}</p>`;
+
+            // Auto-hide after 5 seconds
+            window.customMessageTimeout = setTimeout(() => {
+                box.classList.add('translate-x-full');
+            }, 5000);
+        }
+
+        // --- Print Logic ---
+
+        function openPrintModal() {
+            const { weight, height, age } = window.currentProfile;
+            // Check if weight, height, and age are valid numbers greater than 0
+            if (weight <= 0 || height <= 0 || age <= 0 || isNaN(weight) || isNaN(height) || isNaN(age)) {
+                showCustomMessage('Please enter valid Weight, Height, and Age (must be > 0) first.', 'error');
+                return;
+            }
+            document.getElementById('printModal').classList.remove('hidden');
+        }
+
+        function closePrintModal() {
+            document.getElementById('printModal').classList.add('hidden');
+        }
+
+        function handlePrintSubmission() {
+            const patientName = document.getElementById('patientNameInput').value.trim();
+            const hospitalName = document.getElementById('hospitalNameInput').value.trim();
+
+            if (!patientName) {
+                showCustomMessage("Please enter the Patient's Name.", 'error');
+                return;
+            }
+            if (!hospitalName) {
+                showCustomMessage('Please enter the Hospital/Clinic Name.', 'error');
+                return;
+            }
+
+            // 1. Log data to Google Sheet
+            // This is asynchronous and runs concurrently with printing
+            logDataToSheets(patientName, hospitalName); 
+
+            // 2. Close modal and print
+            closePrintModal();
+            generateReportAndPrint(patientName, hospitalName);
+        }
+
+        function generateReportAndPrint(patientName, hospitalName) {
+            const profile = window.currentProfile;
+
+            // 1. Hide the main app and show the print area
+            document.getElementById('mainApp').classList.add('hidden');
+            document.getElementById('printArea').classList.remove('hidden');
+
+            // 2. Generate content
+            generatePrintContent(profile, patientName, hospitalName);
+
+            // 3. Print
+            setTimeout(() => {
+                window.print();
+            }, 100);
+
+            // 4. Restore view after printing
+            setTimeout(() => {
+                document.getElementById('printArea').classList.add('hidden');
+                document.getElementById('mainApp').classList.remove('hidden');
+            }, 500);
+        }
+
+
+        // --- Print Content Generation ---
+        function generatePrintContent(profile, patientName, hospitalName) {
+            const { weight, height, age, gender, activityLevel, units, bmi, dietType, stateLocation, aiDietPlan } = profile;
+            const { bmr, tdee } = calculateMetrics(profile);
+            const bmiResult = getBMIClassification(bmi);
+            const rda = window.rda;
+            
+            // Display values based on current unit selection
+            const weightUnit = units === 'metric' ? 'kg' : 'lbs';
+            const heightUnit = units === 'metric' ? 'cm' : 'in';
+            // Note: internal state uses KG/CM, so we convert back for display if needed
+            const displayWeight = units === 'metric' ? weight : (weight / 0.453592);
+            const displayHeight = units === 'metric' ? height : (height / 2.54);
+            
+            const activityLevelText = getActivityLevelText(activityLevel);
+
+            // AI Diet Block
+            const aiDietBlock = aiDietPlan ? `
+                <div class="mt-8 p-6 bg-indigo-50 border-l-4 border-primary-color rounded-xl shadow-md break-inside-avoid">
+                    <h3 class="text-xl font-extrabold text-primary-color mb-3">AI Regional Diet Summary (${stateLocation})</h3>
+                    <p class="text-base text-gray-700 leading-relaxed">${aiDietPlan}</p>
+                    <p class="mt-3 text-xs text-gray-500 italic">This summary is machine-generated based on regional cuisine and should be used for informational purposes only.</p>
+                </div>
+            ` : '';
+
+
+            const printContent = `
+                <div class="p-4 sm:p-8">
+                    <div class="p-report-header text-center pb-6 mb-8 border-b-4 border-primary-color">
+                        <h1 class="text-4xl font-extrabold text-primary-color">${hospitalName || 'Health & Nutrition Center'}</h1>
+                        <p class="text-lg text-gray-700 mt-2">Personalized Health Assessment Report</p>
+                        <p class="text-2xl font-semibold mt-6">Patient: ${patientName || 'N/A'}</p>
+                        <p class="text-md text-gray-500">Date: ${new Date().toLocaleDateString('en-IN', {day: 'numeric', month: 'long', year: 'numeric'})}</p>
+                    </div>
+
+                    <div class="p-report-section grid grid-cols-1 md:grid-cols-2 gap-8 mb-8">
+                        <!-- Personal Metrics Card -->
+                        <div class="p-6 border-2 border-gray-200 rounded-xl shadow-lg break-inside-avoid">
+                            <h3 class="text-xl font-bold text-gray-800 mb-4 border-b pb-2">User Profile</h3>
+                            <div class="text-md space-y-2">
+                                <p><strong>Age:</strong> ${age} years</p>
+                                <p><strong>Gender:</strong> ${gender}</p>
+                                <p><strong>Weight:</strong> ${displayWeight.toFixed(1)} ${weightUnit}</p>
+                                <p><strong>Height:</strong> ${displayHeight.toFixed(1)} ${heightUnit}</p>
+                                <p><strong>Activity Level:</strong> ${activityLevelText}</p>
+                                <p><strong>Diet Preference:</strong> ${dietType}</p>
+                                <p><strong>Location:</strong> ${stateLocation}</p>
+                            </div>
+                        </div>
+
+                        <!-- Calculation Results Card -->
+                        <div class="p-6 border-2 border-secondary-color rounded-xl shadow-lg bg-cyan-50 break-inside-avoid">
+                            <h3 class="text-xl font-bold text-gray-800 mb-4 border-b pb-2">Key Results</h3>
+                            <div class="text-md space-y-4">
+                                <p><strong>BMI (Body Mass Index):</strong> <span class="text-primary-color font-extrabold text-3xl ml-2">${bmi}</span></p>
+                                <p><strong>Classification:</strong> <span class="${bmiResult.color} font-bold text-lg">${bmiResult.name}</span></p>
+                                <p><strong>BMR (Resting Calorie Needs):</strong> <span class="text-primary-color font-extrabold text-2xl ml-2">${bmr.toLocaleString()}</span> kcal/day</p>
+                                <p><strong>TDEE (Daily Calorie Needs):</strong> <span class="text-primary-color font-extrabold text-3xl ml-2">${tdee.toLocaleString()}</span> kcal/day</p>
+                            </div>
+                            <p class="mt-4 text-xs text-gray-500 italic">TDEE is the estimated calorie requirement for weight maintenance.</p>
+                        </div>
+                    </div>
+
+                    ${aiDietBlock} <!-- AI DIET BLOCK INSERTED HERE -->
+
+                    <div class="p-report-section mt-8 break-inside-avoid">
+                        <h3 class="text-xl font-bold text-gray-800 border-b pb-2 mb-4">Estimated Daily Recommended Allowances (RDA)</h3>
+                        <table class="w-full text-md border-collapse border border-gray-300 rounded-lg overflow-hidden">
+                            <thead class="bg-primary-color text-white">
+                                <tr class="font-semibold text-left">
+                                    <th class="p-3 border-r border-primary-color">Nutrient</th>
+                                    <th class="p-3 text-right">Recommended Intake</th>
+                                    <th class="p-3">Unit</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr class="border-b bg-gray-50">
+                                    <td class="p-3">Energy (Calories)</td>
+                                    <td class="p-3 text-right font-bold">${tdee.toLocaleString()}</td>
+                                    <td class="p-3">kcal</td>
+                                </tr>
+                                <tr class="border-b">
+                                    <td class="p-3">Protein</td>
+                                    <td class="p-3 text-right font-bold">${rda.protein}</td>
+                                    <td class="p-3">g</td>
+                                </tr>
+                                <tr class="border-b bg-gray-50">
+                                    <td class="p-3">Total Fat (Min.)</td>
+                                    <td class="p-3 text-right font-bold">${rda.fat}</td>
+                                    <td class="p-3">g</td>
+                                </tr>
+                                <tr class="border-b">
+                                    <td class="p-3">Fiber</td>
+                                    <td class="p-3 text-right font-bold">${rda.fiber}</td>
+                                    <td class="p-3">g</td>
+                                </tr>
+                                <tr class="border-b bg-gray-50">
+                                    <td class="p-3">Calcium</td>
+                                    <td class="p-3 text-right font-bold">${rda.calcium}</td>
+                                    <td class="p-3">mg</td>
+                                </tr>
+                                <tr class="border-b">
+                                    <td class="p-3">Iron</td>
+                                    <td class="p-3 text-right font-bold">${rda.iron}</td>
+                                    <td class="p-3">mg</td>
+                                </tr>
+                                <tr class="border-b bg-gray-50">
+                                    <td class="p-3">Sodium (Max.)</td>
+                                    <td class="p-3 text-right font-bold">${rda.sodium}</td>
+                                    <td class="p-3">mg</td>
+                                </tr>
+                                <tr class="border-b">
+                                    <td class="p-3">Potassium</td>
+                                    <td class="p-3 text-right font-bold">${rda.potassium}</td>
+                                    <td class="p-3">mg</td>
+                                </tr>
+                                <tr class="border-b bg-gray-50">
+                                    <td class="p-3">Vitamin C</td>
+                                    <td class="p-3 text-right font-bold">${rda.vitaminC}</td>
+                                    <td class="p-3">mg</td>
+                                </tr>
+                                <tr class="border-b">
+                                    <td class="p-3">Vitamin D</td>
+                                    <td class="p-3 text-right font-bold">${rda.vitaminD}</td>
+                                    <td class="p-3">μg</td>
+                                </tr>
+                                <tr class="border-b bg-gray-50">
+                                    <td class="p-3">Vitamin B12</td>
+                                    <td class="p-3 text-right font-bold">${rda.vitaminB12}</td>
+                                    <td class="p-3">μg</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                        <p class="mt-4 text-xs text-gray-500 italic">
+                            These are general reference values for macronutrients and micronutrients for a healthy adult and may vary based on individual needs.
+                        </p>
+                    </div>
+
+                    <div class="p-report-section mt-8 break-inside-avoid text-center p-4 border-t border-gray-300">
+                        <p class="text-sm text-gray-600 font-semibold">
+                            Disclaimer: Consult a healthcare professional or registered dietitian before making significant changes to your diet or exercise routine.
+                        </p>
+                    </div>
+                </div>
+            `;
+
+            document.getElementById('printArea').innerHTML = printContent;
+        }
+
+        window.onload = () => {
+            // Populate the state dropdown first
+            const stateSelect = document.getElementById('stateLocation');
+            indianStates.forEach(state => {
+                const option = document.createElement('option');
+                option.value = state;
+                option.textContent = state;
+                stateSelect.appendChild(option);
+            });
+            
+            // Initial setup: Default to metric (false) and Male
+            toggleUnits(false); 
+            toggleGenderSwitch(false);
+            applyTheme(window.currentTheme);
+            updateUI(); 
+        };
+
+    </script>
+
+
+    <!-- The Main Application UI -->
+    <div id="mainApp" class="min-h-screen p-4 sm:p-8 flex justify-center items-center">
+        <div class="main-card w-full max-w-5xl p-6 sm:p-10 rounded-3xl">
+            <header class="text-center mb-10">
+                <h1 class="text-4xl font-extrabold text-primary-color dark:text-secondary-color">Macro Planner &amp; AI Diet</h1>
+                <p class="text-gray-500 dark:text-gray-400 mt-2 text-lg">Calculate, Customize, and Plan Your Nutrition</p>
+            </header>
+
+            <!-- Configuration & Results Grid -->
+            <section class="grid lg:grid-cols-3 gap-8 mb-8">
+                
+                <!-- INPUT CARD (2/3 width on desktop) -->
+                <div class="lg:col-span-2 space-y-6 p-6 rounded-2xl border dark:border-gray-700">
+                    <h2 class="text-2xl font-bold text-primary-color dark:text-secondary-color mb-4 border-b pb-2">1. Your Profile Metrics</h2>
+                    
+                    <div class="grid sm:grid-cols-2 gap-4">
+                        <!-- Weight -->
+                        <div class="input-group">
+                            <label id="weightLabel" for="weight" class="block text-sm font-semibold mb-1">Weight (kg)</label>
+                            <input type="number" id="weight" placeholder="e.g. 70" class="w-full p-3 border rounded-xl focus:ring-secondary-color focus:border-secondary-color" oninput="updateProfile('weight', this.value)" value="70.0">
+                        </div>
+                        <!-- Height -->
+                        <div class="input-group">
+                            <label id="heightLabel" for="height" class="block text-sm font-semibold mb-1">Height (cm)</label>
+                            <input type="number" id="height" placeholder="e.g. 175" class="w-full p-3 border rounded-xl focus:ring-secondary-color focus:border-secondary-color" oninput="updateProfile('height', this.value)" value="175.0">
+                        </div>
+                         <!-- Age -->
+                        <div class="input-group">
+                            <label for="age" class="block text-sm font-semibold mb-1">Age (years)</label>
+                            <input type="number" id="age" placeholder="e.g. 30" class="w-full p-3 border rounded-xl focus:ring-secondary-color focus:border-secondary-color" oninput="updateProfile('age', this.value)" value="30">
+                        </div>
+                        <!-- Gender Switch -->
+                        <div class="flex items-center justify-between p-3">
+                            <label class="text-sm font-semibold">Gender: <span id="genderLabel" class="font-extrabold text-primary-color dark:text-secondary-color">Male</span></label>
+                            <div class="flex items-center">
+                                <span class="text-sm font-semibold mr-3">Male</span>
+                                <label class="relative inline-flex items-center cursor-pointer">
+                                    <input type="checkbox" value="" class="sr-only peer" id="genderSwitch" onchange="toggleGenderSwitch(this.checked)">
+                                    <div class="w-11 h-6 bg-gray-300 dark:bg-gray-600 rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[3px] after:start-[3px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-primary-color dark:peer-checked:bg-secondary-color"></div>
+                                </label>
+                                <span class="text-sm font-semibold ml-3">Female</span>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Activity Level -->
+                    <div class="input-group">
+                        <label for="activityLevel" class="block text-sm font-semibold mb-1">Activity Level</label>
+                        <select id="activityLevel" class="w-full p-3 border rounded-xl focus:ring-secondary-color focus:border-secondary-color appearance-none" onchange="updateProfile('activityLevel', this.value)">
+                            <option value="1.2">Sedentary (Little to no exercise)</option>
+                            <option value="1.375">Lightly Active (Light exercise 1-3 days/week)</option>
+                            <option value="1.55" selected>Moderately Active (Moderate exercise 3-5 days/week)</option>
+                            <option value="1.725">Very Active (Hard exercise 6-7 days/week)</option>
+                            <option value="1.9">Extra Active (Very hard exercise &amp; physical job)</option>
+                        </select>
+                    </div>
+
+                    <!-- Diet and Location -->
+                    <h2 class="text-2xl font-bold text-primary-color dark:text-secondary-color mb-4 border-b pb-2 pt-4">2. Diet Customization (India Focus)</h2>
+                    <div class="grid sm:grid-cols-2 gap-4">
+                         <!-- Diet Type -->
+                        <div class="input-group">
+                            <label for="dietType" class="block text-sm font-semibold mb-1">Diet Preference</label>
+                            <select id="dietType" class="w-full p-3 border rounded-xl focus:ring-secondary-color focus:border-secondary-color appearance-none" onchange="updateProfile('dietType', this.value)">
+                                <option value="Non-Vegetarian" selected>Non-Vegetarian</option>
+                                <option value="Vegetarian">Vegetarian</option>
+                                <option value="Vegan">Vegan</option>
+                                <option value="Pescetarian">Pescetarian</option>
+                                <option value="AI Diet (based on state of India)">AI Diet (based on state of India)</option>
+                            </select>
+                        </div>
+                        <!-- Location (State) -->
+                        <div class="input-group transition duration-300" id="stateLocationInput">
+                            <label for="stateLocation" class="block text-sm font-semibold mb-1">Location (Indian State)</label>
+                            <select id="stateLocation" class="w-full p-3 border rounded-xl focus:ring-secondary-color focus:border-secondary-color appearance-none" onchange="updateProfile('stateLocation', this.value)">
+                                <!-- Options populated by JS on load -->
+                            </select>
+                            <p class="text-xs text-gray-400 mt-1 italic">Required for AI Diet generation.</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- RESULTS CARD (1/3 width on desktop) -->
+                <div class="lg:col-span-1 space-y-4 p-6 rounded-2xl result-box dark:bg-gray-800 dark:border-gray-700 text-center">
+                    <h2 class="text-2xl font-bold text-gray-800 dark:text-white mb-4 border-b border-gray-300 dark:border-gray-700 pb-2">Key Calculations</h2>
+                    
+                    <!-- BMI Result -->
+                    <div class="p-4 bg-white dark:bg-gray-700 rounded-xl shadow-lg">
+                        <p class="text-md font-medium text-gray-600 dark:text-gray-400">Body Mass Index (BMI)</p>
+                        <p class="text-5xl font-extrabold text-primary-color dark:text-secondary-color mt-1" id="bmiValue">22.86</p>
+                        <p class="text-sm font-medium text-gray-400 dark:text-gray-500 mt-1" id="bmiUnitText">(kg, cm)</p>
+                        <p class="text-md font-medium text-gray-700 dark:text-gray-300 mt-2">Classification:</p>
+                        <p id="bmiClassification" class="font-bold text-lg text-success-color mt-1">Normal weight</p>
+                    </div>
+
+                    <!-- BMR Result -->
+                    <div class="p-4 bg-white dark:bg-gray-700 rounded-xl shadow-lg">
+                        <p class="text-md font-medium text-gray-600 dark:text-gray-400">Basal Metabolic Rate (BMR)</p>
+                        <p class="text-4xl font-extrabold text-primary-color/80 dark:text-secondary-color/80 mt-1" id="bmrResult">1,500</p>
+                        <p class="text-md font-bold text-gray-700 dark:text-gray-300">kcal/day (Resting)</p>
+                    </div>
+                    
+                    <!-- TDEE Result -->
+                    <div class="p-4 bg-white dark:bg-gray-700 rounded-xl shadow-lg">
+                        <p class="text-md font-medium text-gray-600 dark:text-gray-400">Total Daily Energy Expenditure (TDEE)</p>
+                        <p class="text-5xl font-extrabold text-primary-color dark:text-secondary-color mt-1" id="tdeeResult">2,500</p>
+                        <p class="text-lg font-bold text-gray-700 dark:text-gray-300">kcal/day (Maintenance)</p>
+                    </div>
+                </div>
+            </section>
+
+            <!-- AI Diet Recommendation Section -->
+            <section id="aiDietSection" class="mt-8 bg-indigo-50 dark:bg-gray-700 p-6 rounded-2xl shadow-inner hidden">
+                <h3 class="text-2xl font-bold text-primary-color dark:text-secondary-color mb-3">AI Regional Diet Summary</h3>
+                <div id="aiDietRecommendation" class="text-base text-gray-700 dark:text-gray-300">
+                    <p class="text-gray-500 dark:text-gray-400">Select a state and "AI Diet" to generate a plan.</p>
+                </div>
+            </section>
+
+
+            <!-- Tools & Print Section -->
+            <section class="mt-10 pt-6 border-t border-gray-200 dark:border-gray-700 flex flex-col sm:flex-row justify-between items-center space-y-4 sm:space-y-0">
+                
+                <!-- Toggles -->
+                <div class="flex space-x-6">
+                    <!-- Unit Toggle -->
+                    <div class="flex items-center">
+                        <span class="text-sm font-semibold mr-3">Metric</span>
+                        <label class="relative inline-flex items-center cursor-pointer">
+                            <input type="checkbox" value="" class="sr-only peer" id="unitToggle" onchange="toggleUnits(this.checked)">
+                            <div class="w-11 h-6 bg-gray-300 dark:bg-gray-600 rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[3px] after:start-[3px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-primary-color dark:peer-checked:bg-secondary-color"></div>
+                        </label>
+                        <span class="text-sm font-semibold ml-3">Imperial</span>
+                    </div>
+
+                    <!-- Theme Toggle -->
+                    <div class="flex items-center">
+                        <span class="text-sm font-semibold mr-3">Light</span>
+                        <label class="relative inline-flex items-center cursor-pointer">
+                            <input type="checkbox" value="" class="sr-only peer" id="themeToggle" onchange="applyTheme(this.checked ? 'dark' : 'light')">
+                            <div class="w-11 h-6 bg-gray-300 dark:bg-gray-600 rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[3px] after:start-[3px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-primary-color dark:peer-checked:bg-secondary-color"></div>
+                        </label>
+                        <span class="text-sm font-semibold ml-3">Dark</span>
+                    </div>
+                </div>
+
+                <!-- Print Button -->
+                <button id="printReportButton" onclick="openPrintModal()" class="w-full sm:w-auto px-8 py-3 bg-secondary-color hover:bg-primary-color text-white font-bold rounded-full shadow-lg transition duration-300 transform hover:scale-[1.03] focus:outline-none focus:ring-4 focus:ring-secondary-color/50">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 inline-block mr-2" fill="none" viewbox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m0 2h10a2 2 0 002-2v-4a2 2 0 00-2-2H7a2 2 0 00-2 2v4a2 2 0 002 2zm-5-3h14"></path>
+                    </svg>
+                    Print Detailed Report
+                </button>
+            </section>
+        </div>
+    </div>
+
+    <!-- Print Area (Hidden by Default) -->
+    <div id="printArea" class="hidden max-w-4xl mx-auto p-8">
+        <!-- Report content will be injected here for printing -->
+    </div>
+
+    <!-- Custom Message Box for non-alert messages -->
+    <div id="customMessageBox" class="fixed bottom-4 right-4 p-4 rounded-lg border-l-4 shadow-lg bg-transparent border-transparent z-50 transition-transform duration-300 transform translate-x-full"></div>
+
+    <!-- Custom Input Modal (Hidden by Default) -->
+    <div id="printModal" class="fixed inset-0 bg-black bg-opacity-70 hidden flex items-center justify-center z-50">
+        <div class="bg-white dark:bg-gray-800 p-8 rounded-2xl shadow-2xl w-full max-w-md m-4 transform transition-all duration-300 scale-100">
+            <h3 class="text-2xl font-extrabold mb-4 text-primary-color dark:text-secondary-color border-b pb-2">Generate Report</h3>
+            <p class="text-sm text-gray-600 dark:text-gray-400 mb-6">Enter details for the report header. This information will be displayed on the printed document.</p>
+            
+            <div class="mb-4">
+                <label for="patientNameInput" class="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1">Patient Name</label>
+                <input type="text" id="patientNameInput" placeholder="Enter full name" class="w-full p-3 border border-gray-300 rounded-xl dark:bg-gray-700 dark:border-gray-600 dark:text-white focus:ring-secondary-color focus:border-secondary-color">
+            </div>
+
+            <div class="mb-8">
+                <label for="hospitalNameInput" class="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1">Hospital/Clinic Name</label>
+                <input type="text" id="hospitalNameInput" placeholder="Enter institution name" class="w-full p-3 border border-gray-300 rounded-xl dark:bg-gray-700 dark:border-gray-600 dark:text-white focus:ring-secondary-color focus:border-secondary-color">
+            </div>
+
+            <div class="flex justify-end space-x-3">
+                <button onclick="closePrintModal()" class="px-6 py-2 text-md font-semibold text-gray-700 dark:text-gray-300 bg-gray-200 dark:bg-gray-700 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 transition">
+                    Cancel
+                </button>
+                <button onclick="handlePrintSubmission()" class="px-6 py-2 text-md font-semibold text-white bg-secondary-color rounded-lg hover:bg-primary-color transition shadow-md">
+                    Generate &amp; Print
+                </button>
+            </div>
+        </div>
+    </div>
+
+
+
+</body>
